@@ -1,0 +1,106 @@
+defaults:
+  - override hydra/sweeper: basic
+  # - override hydra/sweeper/sampler: tpe
+  - override hydra/launcher: joblib
+
+# hydra:
+#   sweeper:
+#     sampler:
+#       seed: 123
+#     direction: maximize
+#     study_name: sphere
+#     storage: null
+#     n_trials: 4
+#     n_jobs: 4
+#     params:
+#       decoder.num_heads: choice(4, 8, 16)
+#       reward_mod.penalty_per_step_value: choice(-1.0, -5.0, -10.0, -20.0)
+#       reward_mod.dead_end_penalty_value: range(-100, -10, 10)
+#       reward_mod.goal_bonus_value: choice(500.0, 1000.0, 2000.0)
+
+#       decoder.learning_rate: tag(log, interval(1e-5, 1e-3))
+
+#       # If you want to tune learning rates individually, uncomment the lines below
+#       # and also adjust accordingly in the train script
+#       # stat_enc.learning_rate: tag(log, interval(1e-4, 1e-1))
+#       # dyn_enc.learning_rate: tag(log, interval(1e-4, 1e-1))
+#       # baseline.learning_rate: tag(log, interval(1e-4, 1e-1))
+#       stat_enc.dropout: interval(0, 0.4)
+#       dyn_enc.dropout: interval(0, 0.4)
+#       baseline.dropout: interval(0, 0.4)
+
+#       reinforce.discount_factor: interval(0.90, 0.999)
+#       reinforce.entropy_coeff: tag(log, interval(1e-3, 1))
+#       reinforce.baseline_loss_coeff: tag(log, interval(0.01, 1.0))
+
+data:
+  train_path: data/training_data_2/not_smart
+  val_path: data/validation_data_2/not_smart
+  test_path: data/test_data_2/not_smart
+  data_file: data.pt
+
+action_masking_funcs:
+  - recursive_dead_end_nodes
+  - trap_neighbors_excluding_target
+
+decoder:
+  num_heads: 8
+  embedding_dim: 128
+  learning_rate: 0.001
+  dropout: 0.1
+
+stat_enc:
+  in_channels: 4
+  num_layers: 8
+  num_heads: 8
+  hidden_size: 128
+  out_size: 128
+  dropout: 0.2
+  learning_rate: 0.001
+
+dyn_enc:
+  in_channels: 4
+  num_layers: 8
+  num_heads: 8
+  hidden_size: 128
+  out_size: 128
+  dropout: 0.2
+  learning_rate: 0.001
+
+baseline:
+  hidden_size: 256
+  num_layers: 2
+  dropout: 0.2
+  learning_rate: 0.001
+
+reinforce:
+  discount_factor: 0.99
+  entropy_coeff: 0.1
+  baseline_loss_coeff: 0.001
+  max_grad_norm: 0.5
+
+training:
+  num_epochs: 1
+  batch_size: 64
+  max_steps: 80
+  patience: 10
+  early_stopping: True
+  save_best_model: True
+  log_interval: 10
+
+score:
+  success_coeff: 0.8
+  travel_time_coeff: 0.2
+  min_time: 0
+  max_time: 1000
+
+reward_mod:
+  revisit_penalty_value: -50.0
+  penalty_per_step_value: -5.0
+  goal_bonus_value: 1000.0
+  dead_end_penalty_value: -1000.0
+  higher_speed_bonus_value: 20.0
+  closer_to_goal_bonus_value: 2
+  aggregated_step_penalty_value: -10.0
+  no_signal_intersection_penalty_value: -10.0
+
