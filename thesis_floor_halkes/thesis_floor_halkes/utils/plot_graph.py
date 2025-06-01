@@ -1,5 +1,5 @@
-from matplotlib import pyplot as plt
 import networkx as nx
+from matplotlib import pyplot as plt
 from torch_geometric.utils import to_networkx
 
 

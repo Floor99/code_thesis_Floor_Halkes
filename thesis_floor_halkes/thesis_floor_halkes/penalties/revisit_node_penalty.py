@@ -1,9 +1,7 @@
 from typing import List
-import torch
 
 from thesis_floor_halkes.environment.base import Environment
-from thesis_floor_halkes.penalties.base import Penalty, Bonus
-from thesis_floor_halkes.utils.haversine import haversine
+from thesis_floor_halkes.penalties.base import Bonus, Penalty
 
 
 class RevisitNodePenalty(Penalty):
@@ -67,10 +65,10 @@ class DeadEndPenalty(Penalty):
 
         if valid_actions == [] and current_node != end_node:
             return self.penalty
-        
+
         if environment.truncated and current_node != end_node:
             return self.penalty
-        
+
         return 0.0
 
 
@@ -82,42 +80,47 @@ class WaitTimePenalty(Penalty):
     def __init__(self, name: str, penalty: float = None):
         super().__init__(name, penalty)
 
-    def __call__(self, **kwargs,) -> float:
+    def __call__(
+        self,
+        **kwargs,
+    ) -> float:
         action = kwargs.get("action", int)
         environment = kwargs.get("environment", Environment)
         has_light_idx = kwargs.get("has_light_idx")
         status_idx = kwargs.get("status_idx")
         wait_time_idx = kwargs.get("wait_time_idx")
-        
+
         has_light = bool(environment.states[-1].static_data.x[action, has_light_idx])
         status = bool(environment.states[-1].dynamic_data.x[action, status_idx])
         wait_time = float(environment.states[-1].dynamic_data.x[action, wait_time_idx])
-        
+
         if has_light and not status:
             return -wait_time
         return 0.0
-    
+
 
 class NoSignalIntersectionPenalty(Penalty):
     def __init__(self, name: str, penalty: float = None):
         super().__init__(name, penalty)
-        
+
     def __call__(self, **kwargs) -> float:
         has_light_idx = kwargs.get("has_light_idx")
         wait_time_idx = kwargs.get("wait_time_idx")
         environment = kwargs.get("environment", Environment)
         current_node = kwargs.get("current_node", int)
-        
-        has_light = bool(environment.states[-1].static_data.x[current_node, has_light_idx])
-        wait_time = float(environment.states[-1].dynamic_data.x[current_node, wait_time_idx])
-        
+
+        has_light = bool(
+            environment.states[-1].static_data.x[current_node, has_light_idx]
+        )
+        wait_time = float(
+            environment.states[-1].dynamic_data.x[current_node, wait_time_idx]
+        )
+
         if not has_light:
             return -wait_time
         return 0.0
 
 
-        
-        
 class GoalBonus(Bonus):
     """
     Bonus for reaching the goal in the environment.
@@ -182,6 +185,9 @@ class HigherSpeedBonus(Bonus):
         action = kwargs.get("action", int)
         speed_idx = kwargs.get("speed_idx", int)
 
-        if environment.states[-1].static_data.edge_attr[:, speed_idx][action].item() > 50.0:
+        if (
+            environment.states[-1].static_data.edge_attr[:, speed_idx][action].item()
+            > 50.0
+        ):
             return self.bonus
         return 0.0

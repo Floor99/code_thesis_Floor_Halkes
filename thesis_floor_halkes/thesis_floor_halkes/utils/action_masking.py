@@ -3,27 +3,6 @@ from networkx import MultiDiGraph
 from omegaconf import DictConfig
 
 
-def get_recursive_dead_end_nodes(G: MultiDiGraph) -> set:
-    """
-    Recursively remove dead-end nodes (degree == 1) and return the set of all such nodes.
-    These are nodes that cannot be part of any loop or through path.
-    """
-    G = G.copy()
-    G_undirected = G.to_undirected()
-    dead_end_nodes = set()
-
-    while True:
-        # Find current dead ends
-        leaves = [n for n, d in G_undirected.degree() if d == 1]
-        if not leaves:
-            break
-        dead_end_nodes.update(leaves)
-        G.remove_nodes_from(leaves)
-        G_undirected = G.to_undirected()
-
-    return dead_end_nodes
-
-
 def get_recursive_dead_end_nodes(G, target_node, **kwargs) -> set:
     """
     Recursively remove dead ends (nodes with degree 1) **excluding**
@@ -33,14 +12,14 @@ def get_recursive_dead_end_nodes(G, target_node, **kwargs) -> set:
     G = G.copy()
     G_undirected = G.to_undirected()
     dead_ends = set()
-    
+
     # Nodes that are protected from pruning
     protected_nodes = set()
-    
+
     while True:
         # Find all current leaf nodes (degree == 1)
         leaves = [n for n in G_undirected.nodes if G_undirected.degree(n) == 1]
-        
+
         # If no more leaves, we're done
         if not leaves:
             break
@@ -68,8 +47,9 @@ def get_recursive_dead_end_nodes(G, target_node, **kwargs) -> set:
     return dead_ends
 
 
-
-def find_trap_neighbors_excluding_target(G: MultiDiGraph, start_node: int, target_node: int, **kwargs) -> set:
+def find_trap_neighbors_excluding_target(
+    G: MultiDiGraph, start_node: int, target_node: int, **kwargs
+) -> set:
     """
     Identify neighbors of start_node that lead into trap-like neighborhoods.
     Do NOT mask any neighbor if it leads to the target_node.
@@ -105,10 +85,13 @@ def find_trap_neighbors_excluding_target(G: MultiDiGraph, start_node: int, targe
 
     return set(trap_neighbors)
 
-def masking_function_manager(cfg:DictConfig):
+
+def masking_function_manager(cfg: DictConfig):
     masks_repo = {
         "recursive_dead_end_nodes": get_recursive_dead_end_nodes,
         "trap_neighbors_excluding_target": find_trap_neighbors_excluding_target,
     }
-    mask_funcs = [masks_repo.get(mask_name, None) for mask_name in cfg.action_masking_funcs]
+    mask_funcs = [
+        masks_repo.get(mask_name, None) for mask_name in cfg.action_masking_funcs
+    ]
     return mask_funcs

@@ -1,10 +1,6 @@
-from matplotlib import pyplot as plt
-import osmnx as ox
 import networkx as nx
-import torch
-from torch_geometric.data import Data
-import numpy as np
-import pandas as pd
+import osmnx as ox
+from matplotlib import pyplot as plt
 
 # timeseries_df = pd.read_parquet("data/processed/node_features_expanded.parquet")
 
@@ -32,7 +28,10 @@ def create_osmnx_sub_graph_only_inside_helmond(lat, lon, dist, timeseries_df):
 
     return G_sub, G_pt
 
-def create_osmnx_sub_graph_only_inside_helmond_from_bbox(left, bottom, right, up, timeseries_df):
+
+def create_osmnx_sub_graph_only_inside_helmond_from_bbox(
+    left, bottom, right, up, timeseries_df
+):
     unique_timeseries = (
         timeseries_df.loc[:, ["node_id", "lat", "lon"]]
         .drop_duplicates(subset=["node_id"])
@@ -40,10 +39,8 @@ def create_osmnx_sub_graph_only_inside_helmond_from_bbox(left, bottom, right, up
     )
 
     G_pt = ox.graph_from_bbox(
-        (left, bottom, right, up),
-        network_type="drive",
-        simplify=True,
-        retain_all=False)
+        (left, bottom, right, up), network_type="drive", simplify=True, retain_all=False
+    )
 
     common_nodes = set(G_pt.nodes()).intersection(unique_timeseries.index)
 
@@ -132,12 +129,12 @@ def get_edge_features_subgraph(G_sub):
     return edges
 
 
-
 if __name__ == "__main__":
-    G_sub, G_pt = create_osmnx_sub_graph_only_inside_helmond(
-        51.473609, 5.738671, 1000, timeseries_df
-    )
-    print(f"{G_sub= }")
+    pass
+    # G_sub, G_pt = create_osmnx_sub_graph_only_inside_helmond(
+    #     51.473609, 5.738671, 1000, timeseries_df
+    # )
+    # print(f"{G_sub= }")
 
-    get_node_features_subgraph(G_sub)
-    get_edge_features_subgraph(G_sub)
+    # get_node_features_subgraph(G_sub)
+    # get_edge_features_subgraph(G_sub)

@@ -1,25 +1,20 @@
-from networkx import MultiDiGraph
-import torch
-from torch_geometric.data import Data, Dataset
 import pandas as pd
-import random
+import torch
+from networkx import MultiDiGraph
+from torch_geometric.data import Data, Dataset
 
-
+from thesis_floor_halkes.environment.base import Environment
 from thesis_floor_halkes.features.dynamic.getter import DynamicFeatureGetterDataFrame
 from thesis_floor_halkes.penalties.calculator import (
     RewardModifierCalculator,
 )
 from thesis_floor_halkes.state import State
-from thesis_floor_halkes.utils.action_masking import (
-    get_recursive_dead_end_nodes,
-    find_trap_neighbors_excluding_target,
-)
 from thesis_floor_halkes.utils.adj_matrix import build_adjecency_matrix
 from thesis_floor_halkes.utils.travel_time import calculate_edge_travel_time
-from thesis_floor_halkes.environment.base import Environment
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# device = torch.device("cpu")  # For testing purposes, use CPU
+device = torch.device("cpu")  # For testing purposes, use CPU
+
 
 class DynamicEnvironment(Environment):
     def __init__(
@@ -38,7 +33,6 @@ class DynamicEnvironment(Environment):
         self.dynamic_feature_getter = dynamic_feature_getter
         self.reward_modifier_calculator = reward_modifier_calculator
         self.max_steps = max_steps
-        # self.time_stamps = sorted(self.dynamic_feature_getter.df['timestamp'].unique())
         self.start_timestamp = start_timestamp
         self.dynamic_node_idx = dynamic_node_idx
         self.static_node_idx = static_node_idx
@@ -53,26 +47,8 @@ class DynamicEnvironment(Environment):
         self.adjecency_matrix = build_adjecency_matrix(
             self.static_data.num_nodes, self.static_data
         )
-        T = len(self.time_stamps)
-        # max_start = max(0, T - 1 - self.max_steps)
         self.current_time_idx = 0
         self.start_timestamp = self.time_stamps[0]
-        # if self.start_timestamp is not None:
-        #     self.start_timestamp = pd.to_datetime(self.start_timestamp)
-        #     if self.start_timestamp not in self.time_stamps:
-        #         print(self.static_dataset.timeseries["timestamp"].unique())
-        #         print(self.time_stamps)
-        #         raise ValueError(
-        #             f"start_timestamp {self.start_timestamp} not in dynamic data"
-        #         )
-        #     self.current_time_idx = self.time_stamps.index(self.start_timestamp)
-        # else:
-        #     T = len(self.time_stamps)
-        #     # max_start = max(0, T - 1 - self.max_steps)
-        #     self.current_time_idx = 0
-        #     self.start_timestamp = self.time_stamps[0]
-        #     print(self.time_stamps[0])
-            
 
         self.states = []
         init_state = self._get_state()
@@ -211,11 +187,6 @@ class DynamicEnvironment(Environment):
         if self.steps_taken >= self.max_steps:
             self.truncated = True
 
-        # if self.terminated or self.truncated:
-        #     agg = AggregatedStepPenalty(name="aggregated_step_penalty", penalty=-3.0)
-        #     agg_value = agg(environment=self)
-        #     reward += agg_value
-
         return new_state, reward, self.terminated, self.truncated, {}
 
     def get_valid_actions(
@@ -233,14 +204,10 @@ class DynamicEnvironment(Environment):
         goal = self.static_data.end_node
 
         current_node_neighbors = set(v for v, _ in adj_matrix[current_node])
-        # neighborhood_trap_nodes = get_trap_neighbors_with_target(
-        #     graph, current_node, goal
-        # )
-        # dead_end_nodes = get_recursive_dead_end_nodes(graph, goal)
 
         # remove neighbors that are already visited
         visited_removed = current_node_neighbors - set(visited_nodes)
-        
+
         nodes_to_remove = set()
         params = {
             "start_node": current_node,
@@ -252,30 +219,16 @@ class DynamicEnvironment(Environment):
             if callable(func):
                 _nodes_to_remove = func(**params)
                 nodes_to_remove.update(_nodes_to_remove)
-        
 
         # remove nodes that are not valid according to the action mask functions
         intermediate_nodes_to_be_removed = visited_removed - nodes_to_remove
-                 
+
         if goal in current_node_neighbors:
             # if the goal is in the neighbors, we keep it
             goal_added = intermediate_nodes_to_be_removed | {goal}
         else:
             # otherwise, we remove the goal from the neighbors
             goal_added = intermediate_nodes_to_be_removed
-                
-
-        # # remove neighbors that are dead-ends
-        # dead_ends_removed = visited_removed - dead_end_nodes
-
-        # # remove neighbors that are trap nodes
-        # trap_nodes_removed = dead_ends_removed - neighborhood_trap_nodes
-
-        # # add neighbors that are the goal
-        # if goal in current_node_neighbors:
-        #     goal_added = trap_nodes_removed | {goal}
-        # else:
-        #     goal_added = trap_nodes_removed
 
         valid = list(goal_added)
         return valid

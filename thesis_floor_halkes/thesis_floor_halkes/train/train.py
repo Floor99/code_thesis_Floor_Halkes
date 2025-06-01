@@ -1,39 +1,35 @@
 import datetime
 import math
+import os
+
 import hydra
+import mlflow
 import numpy as np
-from omegaconf import DictConfig
 import pandas as pd
 import torch
-import mlflow
-import os
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig
 from torch_geometric.loader import DataLoader
-from torch.nn.utils import clip_grad_norm_
 
+from thesis_floor_halkes.agent.dynamic import DynamicAgent
+from thesis_floor_halkes.baselines.critic_network import CriticBaseline
 from thesis_floor_halkes.environment.dynamic_ambulance import DynamicEnvironment
 from thesis_floor_halkes.features.dynamic.getter import DynamicFeatureGetterDataFrame
-
 from thesis_floor_halkes.features.static.final_getter import StaticDataObjectSet
 from thesis_floor_halkes.model.decoder import AttentionDecoder, FixedContext
-from thesis_floor_halkes.model.encoders import StaticGATEncoder, DynamicGATEncoder
+from thesis_floor_halkes.model.encoders import DynamicGATEncoder, StaticGATEncoder
 from thesis_floor_halkes.penalties.calculator import RewardModifierCalculator
 from thesis_floor_halkes.penalties.revisit_node_penalty import (
-    AggregatedStepPenalty,
     CloserToGoalBonus,
     DeadEndPenalty,
     GoalBonus,
     HigherSpeedBonus,
     NoSignalIntersectionPenalty,
     PenaltyPerStep,
-    RevisitNodePenalty,
     WaitTimePenalty,
 )
-from thesis_floor_halkes.baselines.critic_network import CriticBaseline
-
-from thesis_floor_halkes.agent.dynamic import DynamicAgent
 from thesis_floor_halkes.utils.action_masking import masking_function_manager
 from thesis_floor_halkes.utils.episode import finish_episode
-from joblib.externals.loky.backend.context import get_context
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")  # For testing purposes, use CPU
@@ -42,8 +38,6 @@ print(f"Using device: {device}")
 
 
 # torch.autograd.set_detect_anomaly(True)
-
-from hydra.core.hydra_config import HydraConfig
 
 
 # ==== Training Loop with MLFlow Tracking ====
@@ -56,15 +50,21 @@ def main(cfg: DictConfig):
     val_base_dir = cfg.data.val_path
     test_base_dir = cfg.data.test_path
 
-    train_set = StaticDataObjectSet(root=train_base_dir, processed_file_names=[cfg.data.data_file])
+    train_set = StaticDataObjectSet(
+        root=train_base_dir, processed_file_names=[cfg.data.data_file]
+    )
     # train_set = train_set[:2]
 
-    val_set = StaticDataObjectSet(root=val_base_dir, processed_file_names=[cfg.data.data_file])
+    val_set = StaticDataObjectSet(
+        root=val_base_dir, processed_file_names=[cfg.data.data_file]
+    )
     # val_set = val_set[:2]
 
-    test_set = StaticDataObjectSet(root=test_base_dir, processed_file_names=[cfg.data.data_file])
+    test_set = StaticDataObjectSet(
+        root=test_base_dir, processed_file_names=[cfg.data.data_file]
+    )
     # test_set = test_set[:2]
-    
+
     train_loader = DataLoader(
         train_set,
         batch_size=cfg.training.batch_size,
@@ -192,7 +192,9 @@ def main(cfg: DictConfig):
     ).to(device)
     fixed_context = FixedContext(embed_dim=encoder_output_dim * 2).to(device)
     baseline = CriticBaseline(
-        encoder_output_dim * 2, hidden_dim=cfg.baseline.hidden_size, hidden_layers=cfg.baseline.num_layers
+        encoder_output_dim * 2,
+        hidden_dim=cfg.baseline.hidden_size,
+        hidden_layers=cfg.baseline.num_layers,
     ).to(device)
 
     gamma = cfg.reinforce.discount_factor
@@ -218,9 +220,7 @@ def main(cfg: DictConfig):
                     "params": agent.dynamic_encoder.parameters(),
                     "lr": cfg.decoder.learning_rate,
                 },
-                {
-                    "params": agent.decoder.parameters(),
-                    "lr": cfg.decoder.learning_rate},
+                {"params": agent.decoder.parameters(), "lr": cfg.decoder.learning_rate},
                 {
                     "params": agent.baseline.parameters(),
                     "lr": cfg.decoder.learning_rate,
@@ -323,20 +323,31 @@ def main(cfg: DictConfig):
                     if skip_episode:
                         continue
 
-                    total_loss, policy_loss, baseline_loss, entropy_loss, advantages, discounted_returns = (
-                        finish_episode(
-                            rewards=step_info["rewards"],
-                            action_log_probs=step_info["action_log_probs"],
-                            entropies=step_info["entropies"],
-                            baseline_weight=cfg.reinforce.baseline_loss_coeff,
-                            baseline_values=step_info["baseline_values"],
-                            gamma=gamma,
-                            entropy_coeff=cfg.reinforce.entropy_coeff,
-                        )
+                    (
+                        total_loss,
+                        policy_loss,
+                        baseline_loss,
+                        entropy_loss,
+                        advantages,
+                        discounted_returns,
+                    ) = finish_episode(
+                        rewards=step_info["rewards"],
+                        action_log_probs=step_info["action_log_probs"],
+                        entropies=step_info["entropies"],
+                        baseline_weight=cfg.reinforce.baseline_loss_coeff,
+                        baseline_values=step_info["baseline_values"],
+                        gamma=gamma,
+                        entropy_coeff=cfg.reinforce.entropy_coeff,
                     )
 
                     episode_info = record_episode_info(
-                        step_info, total_loss, policy_loss, baseline_loss, entropy_loss, advantages, discounted_returns
+                        step_info,
+                        total_loss,
+                        policy_loss,
+                        baseline_loss,
+                        entropy_loss,
+                        advantages,
+                        discounted_returns,
                     )
                     episode_infos.append(episode_info)
 
@@ -375,7 +386,7 @@ def main(cfg: DictConfig):
                         # clip_grad_norm_(agent.dynamic_encoder.parameters(), max_norm=cfg.reinforce.max_grad_norm)
                         # clip_grad_norm_(agent.decoder.parameters(), max_norm=cfg.reinforce.max_grad_norm)
                         # clip_grad_norm_(agent.baseline.parameters(), max_norm=cfg.reinforce.max_grad_norm) if baseline is not None else None
-                        
+
                         policy_optimizer.step()
                         baseline_optimizer.step()
                     else:
@@ -440,20 +451,31 @@ def main(cfg: DictConfig):
                         if skip_episode:
                             continue
 
-                        total_loss, policy_loss, baseline_loss, entropy_loss, advantages, discounted_returns = (
-                            finish_episode(
-                                rewards=step_info["rewards"],
-                                action_log_probs=step_info["action_log_probs"],
-                                entropies=step_info["entropies"],
-                                baseline_weight=cfg.reinforce.baseline_loss_coeff,
-                                baseline_values=step_info["baseline_values"],
-                                gamma=gamma,
-                                entropy_coeff=cfg.reinforce.entropy_coeff,
-                            )
+                        (
+                            total_loss,
+                            policy_loss,
+                            baseline_loss,
+                            entropy_loss,
+                            advantages,
+                            discounted_returns,
+                        ) = finish_episode(
+                            rewards=step_info["rewards"],
+                            action_log_probs=step_info["action_log_probs"],
+                            entropies=step_info["entropies"],
+                            baseline_weight=cfg.reinforce.baseline_loss_coeff,
+                            baseline_values=step_info["baseline_values"],
+                            gamma=gamma,
+                            entropy_coeff=cfg.reinforce.entropy_coeff,
                         )
 
                         episode_info = record_episode_info(
-                            step_info, total_loss, policy_loss, baseline_loss, entropy_loss, advantages, discounted_returns
+                            step_info,
+                            total_loss,
+                            policy_loss,
+                            baseline_loss,
+                            entropy_loss,
+                            advantages,
+                            discounted_returns,
                         )
                         episode_infos.append(episode_info)
 
@@ -478,24 +500,29 @@ def main(cfg: DictConfig):
                                 "reached_goal",
                                 "num_steps",
                                 "reward",
-                            ]
+                            ],
                         )
                     batch_info = record_batch_info(episode_infos)
                     batch_infos.append(batch_info)
             epoch_info = record_epoch_info(batch_infos, cfg)
-            
-            
-            
+
             score = epoch_info["scoring"]
             early_stopping_counter -= 1
             if score > best_val_epoch_score:
                 best_val_epoch_score = score
                 # print(f"New best validation score: {best_val_epoch_score}")
-                mlflow.log_metric("best_val_epoch_score", best_val_epoch_score, step=epoch)
+                mlflow.log_metric(
+                    "best_val_epoch_score", best_val_epoch_score, step=epoch
+                )
                 mlflow_experiment_name = os.environ["MLFLOW_PARENT_RUN_EXPERIMENT_NAME"]
                 mlflow_parent_run_name = os.environ["MLFLOW_PARENT_RUN_NAME"]
                 mlflow_child_run_name = run.info.run_name
-                locally_save_agent(agent, mlflow_experiment_name, mlflow_parent_run_name, mlflow_child_run_name)
+                locally_save_agent(
+                    agent,
+                    mlflow_experiment_name,
+                    mlflow_parent_run_name,
+                    mlflow_child_run_name,
+                )
 
                 early_stopping_counter = cfg.training.patience
 
@@ -504,7 +531,7 @@ def main(cfg: DictConfig):
                 epoch_step_id,
                 prefix="VAL",
             )
-            
+
             agent.static_encoder.eval()
             agent.dynamic_encoder.eval()
             agent.decoder.eval()
@@ -549,20 +576,31 @@ def main(cfg: DictConfig):
                         if skip_episode:
                             continue
 
-                        total_loss, policy_loss, baseline_loss, entropy_loss, advantages, discounted_returns = (
-                            finish_episode(
-                                rewards=step_info["rewards"],
-                                action_log_probs=step_info["action_log_probs"],
-                                entropies=step_info["entropies"],
-                                baseline_weight=cfg.reinforce.baseline_loss_coeff,
-                                baseline_values=step_info["baseline_values"],
-                                gamma=gamma,
-                                entropy_coeff=cfg.reinforce.entropy_coeff,
-                            )
+                        (
+                            total_loss,
+                            policy_loss,
+                            baseline_loss,
+                            entropy_loss,
+                            advantages,
+                            discounted_returns,
+                        ) = finish_episode(
+                            rewards=step_info["rewards"],
+                            action_log_probs=step_info["action_log_probs"],
+                            entropies=step_info["entropies"],
+                            baseline_weight=cfg.reinforce.baseline_loss_coeff,
+                            baseline_values=step_info["baseline_values"],
+                            gamma=gamma,
+                            entropy_coeff=cfg.reinforce.entropy_coeff,
                         )
 
                         episode_info = record_episode_info(
-                            step_info, total_loss, policy_loss, baseline_loss, entropy_loss, advantages, discounted_returns
+                            step_info,
+                            total_loss,
+                            policy_loss,
+                            baseline_loss,
+                            entropy_loss,
+                            advantages,
+                            discounted_returns,
                         )
                         episode_infos.append(episode_info)
 
@@ -587,7 +625,7 @@ def main(cfg: DictConfig):
                                 "reached_goal",
                                 "num_steps",
                                 "reward",
-                            ]
+                            ],
                         )
 
                     batch_info = record_batch_info(episode_infos)
@@ -595,7 +633,7 @@ def main(cfg: DictConfig):
 
             epoch_info = record_epoch_info(batch_infos, cfg)
             score = epoch_info["scoring"]
-            
+
             mlflow_log_epoch_metrics(
                 epoch_info,
                 epoch_step_id,
@@ -608,32 +646,53 @@ def main(cfg: DictConfig):
             gc.collect()
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
-            
+
     return best_val_epoch_score
 
 
-def locally_save_agent(agent, experiment_name: str, parent_run:str, child_run:str):
+def locally_save_agent(agent, experiment_name: str, parent_run: str, child_run: str):
     # create directory if it doesn't exist
-    os.makedirs(f"saved_models/{experiment_name}/{parent_run}/{child_run}", exist_ok=True)
-    torch.save(agent.static_encoder, f"saved_models/{experiment_name}/{parent_run}/{child_run}/static_encoder.pth")
-    torch.save(agent.dynamic_encoder, f"saved_models/{experiment_name}/{parent_run}/{child_run}/dynamic_encoder.pth")
-    torch.save(agent.decoder, f"saved_models/{experiment_name}/{parent_run}/{child_run}/decoder.pth")
-    torch.save(agent.baseline, f"saved_models/{experiment_name}/{parent_run}/{child_run}/baseline.pth")
+    os.makedirs(
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}", exist_ok=True
+    )
+    torch.save(
+        agent.static_encoder,
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}/static_encoder.pth",
+    )
+    torch.save(
+        agent.dynamic_encoder,
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}/dynamic_encoder.pth",
+    )
+    torch.save(
+        agent.decoder,
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}/decoder.pth",
+    )
+    torch.save(
+        agent.baseline,
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}/baseline.pth",
+    )
 
 
-def score_function(success_rates:list, penalized_travel_times:list, success_coeff:float, penalized_travel_time_coeff:float, min_time:float=0, max_time:float = 1000) -> float:
-    #min max scale penalized_travel_time to [0, 1]
+def score_function(
+    success_rates: list,
+    penalized_travel_times: list,
+    success_coeff: float,
+    penalized_travel_time_coeff: float,
+    min_time: float = 0,
+    max_time: float = 1000,
+) -> float:
+    # min max scale penalized_travel_time to [0, 1]
     penalized_travel_times = np.array(penalized_travel_times)
     penalized_travel_times = (penalized_travel_times - min_time) / (max_time - min_time)
     penalized_travel_times = np.clip(penalized_travel_times, 0, 1)
-    
+
     # Calculate the score as a weighted sum of success rate and penalized travel time
-    score = (
-        success_coeff * np.mean(success_rates)
-        - penalized_travel_time_coeff * np.mean(penalized_travel_times)
-    )
+    score = success_coeff * np.mean(
+        success_rates
+    ) - penalized_travel_time_coeff * np.mean(penalized_travel_times)
     return score
-    
+
+
 def mlflow_log_epoch_metrics(
     epoch_info: dict,
     epoch_step_id: int,
@@ -684,8 +743,7 @@ def record_epoch_info(batch_infos: list, cfg: DictConfig):
         torch.stack([batch_info["mean_travel_time"] for batch_info in batch_infos])
     )
     epoch_info["penalized_travel_time_for_each_batch"] = [
-        batch_info["mean_travel_time_with_penalty"]
-        for batch_info in batch_infos
+        batch_info["mean_travel_time_with_penalty"] for batch_info in batch_infos
     ]
     epoch_info["scoring"] = score_function(
         success_rates=[batch_info["success_rate"] for batch_info in batch_infos],
@@ -770,19 +828,25 @@ def record_batch_info(episode_infos):
             ]
         )
     )
-    
+
     # if not reached goal, travel time is 1000, else travel time
-    batch_info["mean_travel_time_with_penalty"] = torch.mean(
-        torch.stack(
-            [
-                torch.sum(torch.tensor(info["step_travel_time_route"]))
-                if info["reached_goal"]
-                else torch.tensor(1000.0)
-                for info in episode_infos
-            ]
+    batch_info["mean_travel_time_with_penalty"] = (
+        torch.mean(
+            torch.stack(
+                [
+                    torch.sum(torch.tensor(info["step_travel_time_route"]))
+                    if info["reached_goal"]
+                    else torch.tensor(1000.0)
+                    for info in episode_infos
+                ]
+            )
         )
-    ).clone().detach().cpu().item()
-    
+        .clone()
+        .detach()
+        .cpu()
+        .item()
+    )
+
     return batch_info
 
 
@@ -803,10 +867,16 @@ def mlflow_log_batch_metrics(
         prefix = f"{prefix}_BATCH_"
 
     batch_info = {
-        "policy_loss": batch_info["mean_policy_loss"],#.clone().detach().cpu().item(),
-        "baseline_loss": batch_info["mean_baseline_loss"],#.clone().detach().cpu().item(),
-        "entropy_loss": batch_info["mean_entropy_loss"],#.clone().detach().cpu().item(),
-        "total_loss": batch_info["mean_total_loss"],#.clone().detach().cpu().item(),
+        "policy_loss": batch_info[
+            "mean_policy_loss"
+        ],  # .clone().detach().cpu().item(),
+        "baseline_loss": batch_info[
+            "mean_baseline_loss"
+        ],  # .clone().detach().cpu().item(),
+        "entropy_loss": batch_info[
+            "mean_entropy_loss"
+        ],  # .clone().detach().cpu().item(),
+        "total_loss": batch_info["mean_total_loss"],  # .clone().detach().cpu().item(),
         "reward": batch_info["mean_reward"],
         "success_rate": batch_info["success_rate"],
     }
@@ -834,13 +904,13 @@ def mlflow_log_episode_metrics(
         prefix = f"{prefix}_EPISODE_"
 
     episode_metrics = {
-        f"total_loss": episode_info["total_loss"].clone().detach().cpu().item(),
-        f"policy_loss": episode_info["policy_loss"].clone().detach().cpu().item(),
-        f"baseline_loss": episode_info["baseline_loss"].clone().detach().cpu().item(),
-        f"entropy_loss": episode_info["entropy_loss"].clone().detach().cpu().item(),
-        f"reached_goal": int(episode_info["reached_goal"]),
-        f"num_steps": len(episode_info["rewards"]),
-        f"reward": sum(episode_info["rewards"]),
+        "total_loss": episode_info["total_loss"].clone().detach().cpu().item(),
+        "policy_loss": episode_info["policy_loss"].clone().detach().cpu().item(),
+        "baseline_loss": episode_info["baseline_loss"].clone().detach().cpu().item(),
+        "entropy_loss": episode_info["entropy_loss"].clone().detach().cpu().item(),
+        "reached_goal": int(episode_info["reached_goal"]),
+        "num_steps": len(episode_info["rewards"]),
+        "reward": sum(episode_info["rewards"]),
     }
     if exclude_metrics is not None:
         assert isinstance(exclude_metrics, list), "exclude_metrics should be a list"
@@ -854,31 +924,47 @@ def mlflow_log_episode_metrics(
     else:
         # If no metrics are excluded, log all metrics with the prefix
 
-        episode_metrics_with_prefix = {f"{prefix}{k}": v for k, v in episode_metrics.items()}
+        episode_metrics_with_prefix = {
+            f"{prefix}{k}": v for k, v in episode_metrics.items()
+        }
 
         mlflow.log_metrics(
             episode_metrics_with_prefix,
             step=step_id,
         )
 
-    table = pd.DataFrame(episode_info[f"penalty_contributions"])
-    table["policy_loss"] = episode_metrics[f"policy_loss"]
-    table["baseline_loss"] = episode_metrics[f"baseline_loss"]
-    table["entropy_loss"] = episode_metrics[f"entropy_loss"]
-    table["total_loss"] = episode_metrics[f"total_loss"]
-    table["total_reward"] = episode_metrics[f"reward"]
-    table["reached_goal"] = episode_metrics[f"reached_goal"]
-    table["num_steps"] = episode_metrics[f"num_steps"]
-    table["route"] = episode_info[f"route"]
-    table["success"] = 1 if episode_info[f"reached_goal"] else 0
-    table["action_log_probs"] = [info.clone().detach().cpu().item() for info in episode_info["action_log_probs"]]
-    table["entropies"] = [info.clone().detach().cpu().item() for info in episode_info["entropies"]]
-    table["baseline_values"] = [info.clone().detach().cpu().item() for info in episode_info["baseline_values"]]
+    table = pd.DataFrame(episode_info["penalty_contributions"])
+    table["policy_loss"] = episode_metrics["policy_loss"]
+    table["baseline_loss"] = episode_metrics["baseline_loss"]
+    table["entropy_loss"] = episode_metrics["entropy_loss"]
+    table["total_loss"] = episode_metrics["total_loss"]
+    table["total_reward"] = episode_metrics["reward"]
+    table["reached_goal"] = episode_metrics["reached_goal"]
+    table["num_steps"] = episode_metrics["num_steps"]
+    table["route"] = episode_info["route"]
+    table["success"] = 1 if episode_info["reached_goal"] else 0
+    table["action_log_probs"] = [
+        info.clone().detach().cpu().item() for info in episode_info["action_log_probs"]
+    ]
+    table["entropies"] = [
+        info.clone().detach().cpu().item() for info in episode_info["entropies"]
+    ]
+    table["baseline_values"] = [
+        info.clone().detach().cpu().item() for info in episode_info["baseline_values"]
+    ]
     table["rewards"] = episode_info["rewards"]
-    table["advantages"] = [info.clone().detach().cpu().item() for info in episode_info["advantages"]]
-    table["discounted_returns"] = [info.clone().detach().cpu().item() for info in episode_info["discounted_returns"]]
-    table["step_travel_time_route"] = [info.clone().detach().cpu().item() for info in episode_info["step_travel_time_route"]]
-    
+    table["advantages"] = [
+        info.clone().detach().cpu().item() for info in episode_info["advantages"]
+    ]
+    table["discounted_returns"] = [
+        info.clone().detach().cpu().item()
+        for info in episode_info["discounted_returns"]
+    ]
+    table["step_travel_time_route"] = [
+        info.clone().detach().cpu().item()
+        for info in episode_info["step_travel_time_route"]
+    ]
+
     mlflow.log_table(
         data=table,
         artifact_file=f"{prefix}epoch_{epoch_id}/batch_{batch_id}/episode_{episode_id}_{graph_id}.json",
@@ -886,14 +972,20 @@ def mlflow_log_episode_metrics(
 
 
 def record_episode_info(
-    step_info, total_loss, policy_loss, baseline_loss, entropy_loss, advantages, discounted_returns
+    step_info,
+    total_loss,
+    policy_loss,
+    baseline_loss,
+    entropy_loss,
+    advantages,
+    discounted_returns,
 ):
     episode_info = {}
     episode_info["total_loss"] = total_loss
     episode_info["policy_loss"] = policy_loss
     episode_info["baseline_loss"] = baseline_loss
     episode_info["entropy_loss"] = entropy_loss
-    episode_info["discounted_returns"]  = discounted_returns
+    episode_info["discounted_returns"] = discounted_returns
     episode_info["advantages"] = advantages
 
     episode_info = episode_info | step_info

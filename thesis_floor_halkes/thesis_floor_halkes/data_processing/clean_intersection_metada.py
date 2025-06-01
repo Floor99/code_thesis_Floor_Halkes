@@ -1,6 +1,5 @@
 import pandas as pd
 
-
 if __name__ == "__main__":
     df = pd.read_csv("data/raw/intersection_metadata.csv", sep=";")
     df.columns = df.columns.str.strip().str.lower()

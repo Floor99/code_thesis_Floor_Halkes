@@ -1,10 +1,8 @@
 import torch
 import torch.nn.functional as F
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device = torch.device("cpu")  # For testing purposes, use CPU
-
 
 
 def finish_episode(
@@ -14,7 +12,7 @@ def finish_episode(
     baseline_weight=0.5,
     baseline_values=None,
     gamma=0.99,
-    entropy_coeff=0.01
+    entropy_coeff=0.01,
 ):
     R = 0
     returns = []

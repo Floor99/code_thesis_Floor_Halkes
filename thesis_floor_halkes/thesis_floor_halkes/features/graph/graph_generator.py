@@ -1,12 +1,6 @@
-import warnings
-from matplotlib import pyplot as plt
-import osmnx as ox
 import networkx as nx
-from shapely import LineString
-import torch
-from torch_geometric.data import Data
-import numpy as np
-import pandas as pd
+import osmnx as ox
+from matplotlib import pyplot as plt
 
 ox.settings.bidirectional_network_types = ["drive", "walk", "bike"]
 
@@ -146,10 +140,10 @@ def parse_speed(maxspeed, highway):
       - else -> fallback_speed
     """
     speed_defaults = {
-        "primary":      80.0,
-        "secondary":    70.0,
-        "tertiary":     50.0,
-        "residential":  30.0,
+        "primary": 80.0,
+        "secondary": 70.0,
+        "tertiary": 50.0,
+        "residential": 30.0,
         "unclassified": 30.0,
     }
     fallback_speed = 50.0
@@ -167,20 +161,22 @@ def parse_speed(maxspeed, highway):
         pass
     # fallback based on highway type or overall fallback
     return speed_defaults.get(highway, fallback_speed)
-    
+
+
 def parse_length(length):
     """
     Turn length (which may be a list, str, number or None) into a float,
     defaulting to 30 m on failure.
     """
     fall_back_length = 30.0
-    
+
     if isinstance(length, list):
         length = length[0]
     try:
         return float(length)
     except (TypeError, ValueError):
         return fall_back_length
+
 
 def get_edge_features_subgraph(G_sub):
     """
@@ -203,7 +199,7 @@ def get_edge_features_subgraph(G_sub):
 
     # ensure floats
     edges["maxspeed"] = edges["maxspeed"].astype(float)
-    edges["length"]   = edges["length"].astype(float)
+    edges["length"] = edges["length"].astype(float)
 
     return edges[["maxspeed", "length"]]
 
@@ -275,21 +271,20 @@ def plot_with_route(G_sub, route=None, ax=None, goal_node=None):
     # )
 
     ax.legend()
-    
-    
 
     return fig, ax
 
 
 if __name__ == "__main__":
-    G_sub, G_pt = create_osmnx_sub_graph_only_inside_helmond(
-        51.473609, 5.738671, 1000, timeseries_df
-    )
-    print(f"{G_sub= }")
+    pass
+    # G_sub, G_pt = create_osmnx_sub_graph_only_inside_helmond(
+    #     51.473609, 5.738671, 1000, timeseries_df
+    # )
+    # print(f"{G_sub= }")
 
-    plot_with_route(
-        G_sub,
-        G_pt,
-        route=[0, 1, 2],
-        goal_node=2,
-    )
+    # plot_with_route(
+    #     G_sub,
+    #     G_pt,
+    #     route=[0, 1, 2],
+    #     goal_node=2,
+    # )

@@ -1,9 +1,13 @@
+import glob
+import os
+
 import mlflow
+import yaml
 
 
 def log_episode_artifacts(episode_info, step_logs, epoch, batch_idx, graph_idx, fig):
     graph_folder = f"epoch_{epoch:03}/batch_{batch_idx:03}/graph_{graph_idx:02}"
-    
+
     # Log main info and figure
     mlflow.log_dict(episode_info, f"{graph_folder}/info.json")
     mlflow.log_figure(fig, f"{graph_folder}/graph.png")
@@ -40,7 +44,7 @@ def log_gradient_norms(module, module_name, step_id):
             )
 
 
-def flatten_dict(d, parent_key='', sep='.'):
+def flatten_dict(d, parent_key="", sep="."):
     items = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -50,23 +54,23 @@ def flatten_dict(d, parent_key='', sep='.'):
             items.append((new_key, v))
     return dict(items)
 
+
 def get_nested(cfg, keys):
     for key in keys:
         cfg = cfg[key]
     return cfg
 
 
-import glob
-import os
-import yaml
-import mlflow
-
-def log_latest_best_params_to_mlflow(multirun_dir="multirun", experiment_name="dynamic_ambulance_training"):
+def log_latest_best_params_to_mlflow(
+    multirun_dir="multirun", experiment_name="dynamic_ambulance_training"
+):
     """
     Finds the latest optimization_results.yaml in the multirun directory and logs best params to MLflow.
     """
     # Search for all optimization_results.yaml files in the multirun directory
-    result_files = glob.glob(os.path.join(multirun_dir, "*", "*", "optimization_results.yaml"))
+    result_files = glob.glob(
+        os.path.join(multirun_dir, "*", "*", "optimization_results.yaml")
+    )
     if not result_files:
         print("No optimization_results.yaml files found.")
         return

@@ -1,8 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
 
-from thesis_floor_halkes.action.base import Action
-from thesis_floor_halkes.environment.base import Environment
 # from thesis_floor_halkes.environment.dynamic_ambulance import AmbulanceEnvDynamic
 
 

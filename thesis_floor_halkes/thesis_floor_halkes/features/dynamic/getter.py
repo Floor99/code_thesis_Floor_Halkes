@@ -24,7 +24,8 @@ class DynamicFeatureGetter(ABC):
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# device = torch.device("cpu")  # For testing purposes, use CPU
+device = torch.device("cpu")  # For testing purposes, use CPU
+
 
 class DynamicFeatureGetterDataFrame(DynamicFeatureGetter):
     def __init__(
@@ -45,13 +46,17 @@ class DynamicFeatureGetterDataFrame(DynamicFeatureGetter):
         t = self.timestamps[time_step]
         df_t = sub_node_df[sub_node_df["timestamp"] == t].sort_values("node_id")
 
-        wait_times = torch.tensor(df_t["wait_time"].values, dtype=torch.float, device=device)
+        wait_times = torch.tensor(
+            df_t["wait_time"].values, dtype=torch.float, device=device
+        )
         num_nodes = environment.static_data.num_nodes
 
         has_light = environment.static_data.x[:, traffic_light_idx].bool()
-        rand_bits = torch.randint(0, 2, (num_nodes,), dtype=torch.bool, device=device)  # get random bits
+        rand_bits = torch.randint(
+            0, 2, (num_nodes,), dtype=torch.bool, device=device
+        )  # get random bits
         light_status = (rand_bits & has_light).to(torch.float)
-        
+
         # set light status to red
         # light_status = torch.zeros(num_nodes, device=device)
 

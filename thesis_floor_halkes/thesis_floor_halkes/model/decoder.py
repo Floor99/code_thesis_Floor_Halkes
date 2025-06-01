@@ -51,18 +51,17 @@ class AttentionDecoder(nn.Module):
 
         # Select only valid node embeddings
         valid_indices = (~invalid_action_mask).nonzero(as_tuple=True)[0]  # [num_valid]
-        
-        
+
         valid_keys = (
-            (node_embeddings[valid_indices]
+            node_embeddings[valid_indices]
             #  .clone()
-             .unsqueeze(0))
+            .unsqueeze(0)
         )  # [1, num_valid, embed_dim]
-        
+
         valid_values = (
-            (node_embeddings[valid_indices]
+            node_embeddings[valid_indices]
             #  .clone()
-             .unsqueeze(0))
+            .unsqueeze(0)
         )
 
         # Compute attention output (ignore weights for performance)
@@ -73,7 +72,9 @@ class AttentionDecoder(nn.Module):
 
         # Compute scores for each valid node
         scores = torch.matmul(valid_keys.squeeze(0), attn_output)  # [num_valid]
-        scores = scores / torch.sqrt(torch.tensor(self.embed_dim, dtype=torch.float32, device=scores.device))
+        scores = scores / torch.sqrt(
+            torch.tensor(self.embed_dim, dtype=torch.float32, device=scores.device)
+        )
         probs = F.softmax(scores, dim=-1)
 
         assert probs.shape == valid_indices.shape
@@ -82,12 +83,12 @@ class AttentionDecoder(nn.Module):
             sampled_idx = torch.argmax(probs)
             entropy = torch.tensor(0.0, device=probs.device)
             log_prob = torch.log(probs[sampled_idx])
-        else: 
+        else:
             # Sample action
             dist = Categorical(probs)
             sampled_idx = dist.sample()  # scalar tensor
             entropy = dist.entropy()
             log_prob = dist.log_prob(sampled_idx)
-        
+
         action = valid_indices[sampled_idx.item()].item()
         return action, log_prob, entropy

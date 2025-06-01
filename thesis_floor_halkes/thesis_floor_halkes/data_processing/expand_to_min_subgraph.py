@@ -1,5 +1,5 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 def expand_wait_times(df, num_peaks=2, amp_frac=0.1, sigma=1.0):
@@ -45,7 +45,7 @@ def expand_wait_times(df, num_peaks=2, amp_frac=0.1, sigma=1.0):
                 print(f"{amp_frac=}, {avg_k=}, {avg_k1=}, {center=}")
                 raise e
             peaks += height * np.exp(-0.5 * ((t - center) / sigma) ** 2)
-                    
+
         peaks[0] = 0.0  # ensure the first minute stays exact
 
         # 3) combine
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     timeseries_subgraph = pd.read_parquet(
         "data/processed_new/timeseries_subgraph.parquet"
     )
-   
+
     new_df = expand_wait_times(
         timeseries_subgraph, num_peaks=3, amp_frac=0.1, sigma=1.5
     )

@@ -1,49 +1,39 @@
 import datetime
-import math
+import os
+
 import hydra
+import mlflow
 import numpy as np
-from omegaconf import DictConfig
 import pandas as pd
 import torch
-import mlflow
-import os
+from hydra.core.hydra_config import HydraConfig
+from hydra.types import RunMode
+from omegaconf import DictConfig
 from torch_geometric.loader import DataLoader
-from torch.nn.utils import clip_grad_norm_
 
+from thesis_floor_halkes.agent.dynamic import DynamicAgent
 from thesis_floor_halkes.environment.dynamic_ambulance import DynamicEnvironment
 from thesis_floor_halkes.features.dynamic.getter import DynamicFeatureGetterDataFrame
-
 from thesis_floor_halkes.features.static.final_getter import StaticDataObjectSet
-from thesis_floor_halkes.model.decoder import AttentionDecoder, FixedContext
-from thesis_floor_halkes.model.encoders import StaticGATEncoder, DynamicGATEncoder
+from thesis_floor_halkes.model.decoder import FixedContext
 from thesis_floor_halkes.penalties.calculator import RewardModifierCalculator
 from thesis_floor_halkes.penalties.revisit_node_penalty import (
-    AggregatedStepPenalty,
     CloserToGoalBonus,
     DeadEndPenalty,
     GoalBonus,
     HigherSpeedBonus,
     NoSignalIntersectionPenalty,
     PenaltyPerStep,
-    RevisitNodePenalty,
     WaitTimePenalty,
 )
-from thesis_floor_halkes.baselines.critic_network import CriticBaseline
-
-from thesis_floor_halkes.agent.dynamic import DynamicAgent
 from thesis_floor_halkes.utils.action_masking import masking_function_manager
-from thesis_floor_halkes.utils.episode import finish_episode
-from joblib.externals.loky.backend.context import get_context
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# device = torch.device("cpu")  # For testing purposes, use CPU
+device = torch.device("cpu")  # For testing purposes, use CPU
 
 print(f"Using device: {device}")
 
-
 # torch.autograd.set_detect_anomaly(True)
-
-from hydra.core.hydra_config import HydraConfig
 
 
 # ==== Training Loop with MLFlow Tracking ====
@@ -56,41 +46,35 @@ def main(cfg: DictConfig):
     val_base_dir = cfg.data.val_path
     test_base_dir = cfg.data.test_path
 
-    train_set = StaticDataObjectSet(root=train_base_dir, processed_file_names=[cfg.data.data_file])
+    train_set = StaticDataObjectSet(
+        root=train_base_dir, processed_file_names=[cfg.data.data_file]
+    )
     # train_set = train_set[:2]
 
-    val_set = StaticDataObjectSet(root=val_base_dir, processed_file_names=[cfg.data.data_file])
+    val_set = StaticDataObjectSet(
+        root=val_base_dir, processed_file_names=[cfg.data.data_file]
+    )
     # val_set = val_set[:2]
 
-    test_set = StaticDataObjectSet(root=test_base_dir, processed_file_names=[cfg.data.data_file])
+    test_set = StaticDataObjectSet(
+        root=test_base_dir, processed_file_names=[cfg.data.data_file]
+    )
     # test_set = test_set[:2]
-    
+
     train_loader = DataLoader(
         train_set,
         batch_size=cfg.training.batch_size,
         shuffle=True,
-        # num_workers = 2,
-        # prefetch_factor=4,
-        # multiprocessing_context=get_context('loky'),
-        # persistent_workers=True
     )
     val_loader = DataLoader(
         val_set,
         batch_size=cfg.training.batch_size,
         shuffle=True,
-        # num_workers = 2,
-        # prefetch_factor=4,
-        # multiprocessing_context=get_context('loky'),
-        # persistent_workers=True
     )
     test_loader = DataLoader(
         test_set,
         batch_size=cfg.training.batch_size,
         shuffle=True,
-        # num_workers = 2,
-        # prefetch_factor=4,
-        # multiprocessing_context=get_context('loky'),
-        # persistent_workers=True
     )
 
     dynamic_node_idx = {
@@ -161,7 +145,6 @@ def main(cfg: DictConfig):
         dynamic_feature_getter=DynamicFeatureGetterDataFrame(),
         reward_modifier_calculator=reward_modifier_calculator,
         max_steps=cfg.training.max_steps,
-        # start_timestamp="2024-01-31 08:30:00",
         dynamic_node_idx=dynamic_node_idx,
         static_node_idx=static_node_idx,
         static_edge_idx=static_edge_idx,
@@ -169,37 +152,25 @@ def main(cfg: DictConfig):
     )
 
     encoder_output_dim = cfg.stat_enc.out_size
-    # static_encoder = StaticGATEncoder(
-    #     in_channels=cfg.stat_enc.in_channels,
-    #     hidden_size=cfg.stat_enc.hidden_size,
-    #     edge_attr_dim=2,
-    #     num_layers=cfg.stat_enc.num_layers,
-    #     heads=cfg.stat_enc.num_heads,
-    #     dropout=cfg.stat_enc.dropout,
-    #     out_size=encoder_output_dim,
-    # ).to(device)
-    static_encoder = torch.load("saved_models/dynamic_ambulance_training/2025-05-31_00:57:27/optuna_trial_13/static_encoder.pth", weights_only=False).to(device)
-    dynamic_encoder = torch.load("saved_models/dynamic_ambulance_training/2025-05-31_00:57:27/optuna_trial_13/dynamic_encoder.pth", weights_only=False).to(device)
-    decoder = torch.load("saved_models/dynamic_ambulance_training/2025-05-31_00:57:27/optuna_trial_13/decoder.pth", weights_only=False).to(device)
-    baseline = torch.load("saved_models/dynamic_ambulance_training/2025-05-31_00:57:27/optuna_trial_13/baseline.pth", weights_only=False).to(device)
-    # dynamic_encoder = DynamicGATEncoder(
-    #     in_channels=cfg.dyn_enc.in_channels,
-    #     hidden_size=cfg.dyn_enc.hidden_size,
-    #     num_layers=cfg.dyn_enc.num_layers,
-    #     heads=cfg.dyn_enc.num_heads,
-    #     dropout=cfg.dyn_enc.dropout,
-    #     out_size=encoder_output_dim,
-    # ).to(device)
+    static_encoder = torch.load(
+        "saved_models/dynamic_ambulance_training/2025-05-31_00:57:27/optuna_trial_13/static_encoder.pth",
+        weights_only=False,
+    ).to(device)
+    dynamic_encoder = torch.load(
+        "saved_models/dynamic_ambulance_training/2025-05-31_00:57:27/optuna_trial_13/dynamic_encoder.pth",
+        weights_only=False,
+    ).to(device)
+    decoder = torch.load(
+        "saved_models/dynamic_ambulance_training/2025-05-31_00:57:27/optuna_trial_13/decoder.pth",
+        weights_only=False,
+    ).to(device)
+    baseline = torch.load(
+        "saved_models/dynamic_ambulance_training/2025-05-31_00:57:27/optuna_trial_13/baseline.pth",
+        weights_only=False,
+    ).to(device)
 
-    # decoder = AttentionDecoder(
-    #     embed_dim=encoder_output_dim * 2, num_heads=cfg.decoder.num_heads
-    # ).to(device)
     fixed_context = FixedContext(embed_dim=encoder_output_dim * 2).to(device)
-    # baseline = CriticBaseline(
-    #     encoder_output_dim * 2, hidden_dim=cfg.baseline.hidden_size, hidden_layers=cfg.baseline.num_layers
-    # ).to(device)
 
-    gamma = cfg.reinforce.discount_factor
     agent = DynamicAgent(
         static_encoder=static_encoder,
         dynamic_encoder=dynamic_encoder,
@@ -207,50 +178,6 @@ def main(cfg: DictConfig):
         fixed_context=fixed_context,
         baseline=baseline,
     )
-
-    use_joint_optimization = True  # or False
-
-    if use_joint_optimization and baseline is not None:
-        # One optimizer for all trainable components
-        optimizer = torch.optim.Adam(
-            [
-                {
-                    "params": agent.static_encoder.parameters(),
-                    "lr": cfg.decoder.learning_rate,
-                },
-                {
-                    "params": agent.dynamic_encoder.parameters(),
-                    "lr": cfg.decoder.learning_rate,
-                },
-                {
-                    "params": agent.decoder.parameters(),
-                    "lr": cfg.decoder.learning_rate},
-                {
-                    "params": agent.baseline.parameters(),
-                    "lr": cfg.decoder.learning_rate,
-                },
-            ]
-        )
-    else:
-        # Separate optimizers
-        policy_optimizer = torch.optim.Adam(
-            [
-                {
-                    "params": agent.static_encoder.parameters(),
-                    "lr": cfg.stat_enc.learning_rate,
-                },
-                {
-                    "params": agent.dynamic_encoder.parameters(),
-                    "lr": cfg.dyn_enc.learning_rate,
-                },
-                {"params": agent.decoder.parameters(), "lr": cfg.decoder.learning_rate},
-            ]
-        )
-        if baseline is not None:
-            baseline_optimizer = torch.optim.Adam(
-                agent.baseline.parameters(), lr=cfg.baseline.learning_rate
-            )
-    from hydra.types import RunMode
 
     is_sweep = HydraConfig.get().mode == RunMode.MULTIRUN
     job_num = HydraConfig.get().job.num if is_sweep else None
@@ -275,11 +202,7 @@ def main(cfg: DictConfig):
 
         best_val_epoch_score = -1
         early_stopping_counter = cfg.training.patience
-        
-        train_times = []
-        val_times = []
-        test_times = []
-        
+
         for epoch in range(cfg.training.num_epochs):
             if early_stopping_counter <= 0:
                 print(
@@ -287,7 +210,6 @@ def main(cfg: DictConfig):
                 )
                 break
             print(f"Job:{job_num} == Epoch {epoch + 1}/{cfg.training.num_epochs}")
-            batch_infos = []
             agent.static_encoder.eval()
             agent.dynamic_encoder.eval()
             agent.decoder.eval()
@@ -296,7 +218,6 @@ def main(cfg: DictConfig):
             train_start_time = datetime.datetime.now()
             for batch_idx, batch in enumerate(train_loader):
                 batch = batch.to(device)
-                episode_infos = []
                 skip_episode = False
                 with torch.no_grad():
                     for episode in range(batch.num_graphs):
@@ -304,7 +225,6 @@ def main(cfg: DictConfig):
                         #     f"Episode {episode + 1}/{batch.num_graphs} in batch {batch_idx + 1}/{len(train_loader)}"
                         # )
                         static_data = batch.get_example(episode)
-                        # print(f"Static data.x shape: {static_data.x.shape}")
                         static_data.start_node = int(static_data.start_node.item())
                         static_data.end_node = int(static_data.end_node.item())
                         env.static_data = static_data
@@ -333,19 +253,15 @@ def main(cfg: DictConfig):
                         if skip_episode:
                             continue
             train_end_time = datetime.datetime.now()
-            # train_time = (train_end_time - train_start_time).total_seconds()
-            # train_times.append(train_time)
 
             agent.static_encoder.eval()
             agent.dynamic_encoder.eval()
             agent.decoder.eval()
             agent.baseline.eval() if baseline is not None else None
-            batch_infos = []
             with torch.no_grad():
                 val_start_time = datetime.datetime.now()
                 for batch_idx, batch in enumerate(val_loader):
                     batch = batch.to(device)
-                    episode_infos = []
                     skip_episode = False
 
                     for episode in range(batch.num_graphs):
@@ -382,17 +298,14 @@ def main(cfg: DictConfig):
                             continue
                 val_end_time = datetime.datetime.now()
 
-            
             agent.static_encoder.eval()
             agent.dynamic_encoder.eval()
             agent.decoder.eval()
             agent.baseline.eval() if baseline is not None else None
-            batch_infos = []
             with torch.no_grad():
                 test_start_time = datetime.datetime.now()
                 for batch_idx, batch in enumerate(test_loader):
                     batch = batch.to(device)
-                    episode_infos = []
                     skip_episode = False
 
                     for episode in range(batch.num_graphs):
@@ -428,40 +341,61 @@ def main(cfg: DictConfig):
                         if skip_episode:
                             continue
                 test_end_time = datetime.datetime.now()
-        
+
         train_time = (train_end_time - train_start_time).total_seconds()
         val_time = (val_end_time - val_start_time).total_seconds()
         test_time = (test_end_time - test_start_time).total_seconds()
-        
+
         print(f"Train time: {train_time} seconds")
         print(f"Validation time: {val_time} seconds")
         print(f"Test time: {test_time} seconds")
-            
+
     return best_val_epoch_score
 
 
-def locally_save_agent(agent, experiment_name: str, parent_run:str, child_run:str):
+def locally_save_agent(agent, experiment_name: str, parent_run: str, child_run: str):
     # create directory if it doesn't exist
-    os.makedirs(f"saved_models/{experiment_name}/{parent_run}/{child_run}", exist_ok=True)
-    torch.save(agent.static_encoder, f"saved_models/{experiment_name}/{parent_run}/{child_run}/static_encoder.pth")
-    torch.save(agent.dynamic_encoder, f"saved_models/{experiment_name}/{parent_run}/{child_run}/dynamic_encoder.pth")
-    torch.save(agent.decoder, f"saved_models/{experiment_name}/{parent_run}/{child_run}/decoder.pth")
-    torch.save(agent.baseline, f"saved_models/{experiment_name}/{parent_run}/{child_run}/baseline.pth")
+    os.makedirs(
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}", exist_ok=True
+    )
+    torch.save(
+        agent.static_encoder,
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}/static_encoder.pth",
+    )
+    torch.save(
+        agent.dynamic_encoder,
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}/dynamic_encoder.pth",
+    )
+    torch.save(
+        agent.decoder,
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}/decoder.pth",
+    )
+    torch.save(
+        agent.baseline,
+        f"saved_models/{experiment_name}/{parent_run}/{child_run}/baseline.pth",
+    )
 
 
-def score_function(success_rates:list, penalized_travel_times:list, success_coeff:float, penalized_travel_time_coeff:float, min_time:float=0, max_time:float = 1000) -> float:
-    #min max scale penalized_travel_time to [0, 1]
+def score_function(
+    success_rates: list,
+    penalized_travel_times: list,
+    success_coeff: float,
+    penalized_travel_time_coeff: float,
+    min_time: float = 0,
+    max_time: float = 1000,
+) -> float:
+    # min max scale penalized_travel_time to [0, 1]
     penalized_travel_times = np.array(penalized_travel_times)
     penalized_travel_times = (penalized_travel_times - min_time) / (max_time - min_time)
     penalized_travel_times = np.clip(penalized_travel_times, 0, 1)
-    
+
     # Calculate the score as a weighted sum of success rate and penalized travel time
-    score = (
-        success_coeff * np.mean(success_rates)
-        - penalized_travel_time_coeff * np.mean(penalized_travel_times)
-    )
+    score = success_coeff * np.mean(
+        success_rates
+    ) - penalized_travel_time_coeff * np.mean(penalized_travel_times)
     return score
-    
+
+
 def mlflow_log_epoch_metrics(
     epoch_info: dict,
     epoch_step_id: int,
@@ -512,8 +446,7 @@ def record_epoch_info(batch_infos: list, cfg: DictConfig):
         torch.stack([batch_info["mean_travel_time"] for batch_info in batch_infos])
     )
     epoch_info["penalized_travel_time_for_each_batch"] = [
-        batch_info["mean_travel_time_with_penalty"]
-        for batch_info in batch_infos
+        batch_info["mean_travel_time_with_penalty"] for batch_info in batch_infos
     ]
     epoch_info["scoring"] = score_function(
         success_rates=[batch_info["success_rate"] for batch_info in batch_infos],
@@ -598,19 +531,25 @@ def record_batch_info(episode_infos):
             ]
         )
     )
-    
+
     # if not reached goal, travel time is 1000, else travel time
-    batch_info["mean_travel_time_with_penalty"] = torch.mean(
-        torch.stack(
-            [
-                torch.sum(torch.tensor(info["step_travel_time_route"]))
-                if info["reached_goal"]
-                else torch.tensor(1000.0)
-                for info in episode_infos
-            ]
+    batch_info["mean_travel_time_with_penalty"] = (
+        torch.mean(
+            torch.stack(
+                [
+                    torch.sum(torch.tensor(info["step_travel_time_route"]))
+                    if info["reached_goal"]
+                    else torch.tensor(1000.0)
+                    for info in episode_infos
+                ]
+            )
         )
-    ).clone().detach().cpu().item()
-    
+        .clone()
+        .detach()
+        .cpu()
+        .item()
+    )
+
     return batch_info
 
 
@@ -631,10 +570,16 @@ def mlflow_log_batch_metrics(
         prefix = f"{prefix}_BATCH_"
 
     batch_info = {
-        "policy_loss": batch_info["mean_policy_loss"],#.clone().detach().cpu().item(),
-        "baseline_loss": batch_info["mean_baseline_loss"],#.clone().detach().cpu().item(),
-        "entropy_loss": batch_info["mean_entropy_loss"],#.clone().detach().cpu().item(),
-        "total_loss": batch_info["mean_total_loss"],#.clone().detach().cpu().item(),
+        "policy_loss": batch_info[
+            "mean_policy_loss"
+        ],  # .clone().detach().cpu().item(),
+        "baseline_loss": batch_info[
+            "mean_baseline_loss"
+        ],  # .clone().detach().cpu().item(),
+        "entropy_loss": batch_info[
+            "mean_entropy_loss"
+        ],  # .clone().detach().cpu().item(),
+        "total_loss": batch_info["mean_total_loss"],  # .clone().detach().cpu().item(),
         "reward": batch_info["mean_reward"],
         "success_rate": batch_info["success_rate"],
     }
@@ -662,13 +607,13 @@ def mlflow_log_episode_metrics(
         prefix = f"{prefix}_EPISODE_"
 
     episode_metrics = {
-        f"total_loss": episode_info["total_loss"].clone().detach().cpu().item(),
-        f"policy_loss": episode_info["policy_loss"].clone().detach().cpu().item(),
-        f"baseline_loss": episode_info["baseline_loss"].clone().detach().cpu().item(),
-        f"entropy_loss": episode_info["entropy_loss"].clone().detach().cpu().item(),
-        f"reached_goal": int(episode_info["reached_goal"]),
-        f"num_steps": len(episode_info["rewards"]),
-        f"reward": sum(episode_info["rewards"]),
+        "total_loss": episode_info["total_loss"].clone().detach().cpu().item(),
+        "policy_loss": episode_info["policy_loss"].clone().detach().cpu().item(),
+        "baseline_loss": episode_info["baseline_loss"].clone().detach().cpu().item(),
+        "entropy_loss": episode_info["entropy_loss"].clone().detach().cpu().item(),
+        "reached_goal": int(episode_info["reached_goal"]),
+        "num_steps": len(episode_info["rewards"]),
+        "reward": sum(episode_info["rewards"]),
     }
     if exclude_metrics is not None:
         assert isinstance(exclude_metrics, list), "exclude_metrics should be a list"
@@ -682,31 +627,47 @@ def mlflow_log_episode_metrics(
     else:
         # If no metrics are excluded, log all metrics with the prefix
 
-        episode_metrics_with_prefix = {f"{prefix}{k}": v for k, v in episode_metrics.items()}
+        episode_metrics_with_prefix = {
+            f"{prefix}{k}": v for k, v in episode_metrics.items()
+        }
 
         mlflow.log_metrics(
             episode_metrics_with_prefix,
             step=step_id,
         )
 
-    table = pd.DataFrame(episode_info[f"penalty_contributions"])
-    table["policy_loss"] = episode_metrics[f"policy_loss"]
-    table["baseline_loss"] = episode_metrics[f"baseline_loss"]
-    table["entropy_loss"] = episode_metrics[f"entropy_loss"]
-    table["total_loss"] = episode_metrics[f"total_loss"]
-    table["total_reward"] = episode_metrics[f"reward"]
-    table["reached_goal"] = episode_metrics[f"reached_goal"]
-    table["num_steps"] = episode_metrics[f"num_steps"]
-    table["route"] = episode_info[f"route"]
-    table["success"] = 1 if episode_info[f"reached_goal"] else 0
-    table["action_log_probs"] = [info.clone().detach().cpu().item() for info in episode_info["action_log_probs"]]
-    table["entropies"] = [info.clone().detach().cpu().item() for info in episode_info["entropies"]]
-    table["baseline_values"] = [info.clone().detach().cpu().item() for info in episode_info["baseline_values"]]
+    table = pd.DataFrame(episode_info["penalty_contributions"])
+    table["policy_loss"] = episode_metrics["policy_loss"]
+    table["baseline_loss"] = episode_metrics["baseline_loss"]
+    table["entropy_loss"] = episode_metrics["entropy_loss"]
+    table["total_loss"] = episode_metrics["total_loss"]
+    table["total_reward"] = episode_metrics["reward"]
+    table["reached_goal"] = episode_metrics["reached_goal"]
+    table["num_steps"] = episode_metrics["num_steps"]
+    table["route"] = episode_info["route"]
+    table["success"] = 1 if episode_info["reached_goal"] else 0
+    table["action_log_probs"] = [
+        info.clone().detach().cpu().item() for info in episode_info["action_log_probs"]
+    ]
+    table["entropies"] = [
+        info.clone().detach().cpu().item() for info in episode_info["entropies"]
+    ]
+    table["baseline_values"] = [
+        info.clone().detach().cpu().item() for info in episode_info["baseline_values"]
+    ]
     table["rewards"] = episode_info["rewards"]
-    table["advantages"] = [info.clone().detach().cpu().item() for info in episode_info["advantages"]]
-    table["discounted_returns"] = [info.clone().detach().cpu().item() for info in episode_info["discounted_returns"]]
-    table["step_travel_time_route"] = [info.clone().detach().cpu().item() for info in episode_info["step_travel_time_route"]]
-    
+    table["advantages"] = [
+        info.clone().detach().cpu().item() for info in episode_info["advantages"]
+    ]
+    table["discounted_returns"] = [
+        info.clone().detach().cpu().item()
+        for info in episode_info["discounted_returns"]
+    ]
+    table["step_travel_time_route"] = [
+        info.clone().detach().cpu().item()
+        for info in episode_info["step_travel_time_route"]
+    ]
+
     mlflow.log_table(
         data=table,
         artifact_file=f"{prefix}epoch_{epoch_id}/batch_{batch_id}/episode_{episode_id}_{graph_id}.json",
@@ -714,14 +675,20 @@ def mlflow_log_episode_metrics(
 
 
 def record_episode_info(
-    step_info, total_loss, policy_loss, baseline_loss, entropy_loss, advantages, discounted_returns
+    step_info,
+    total_loss,
+    policy_loss,
+    baseline_loss,
+    entropy_loss,
+    advantages,
+    discounted_returns,
 ):
     episode_info = {}
     episode_info["total_loss"] = total_loss
     episode_info["policy_loss"] = policy_loss
     episode_info["baseline_loss"] = baseline_loss
     episode_info["entropy_loss"] = entropy_loss
-    episode_info["discounted_returns"]  = discounted_returns
+    episode_info["discounted_returns"] = discounted_returns
     episode_info["advantages"] = advantages
 
     episode_info = episode_info | step_info
